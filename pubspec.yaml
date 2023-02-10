@@ -38,6 +38,8 @@ dependencies:
   cupertino_icons: ^1.0.2
   flutter_painter: 1.0.1
   phosphor_flutter: 1.4.0
+  flutter_colorpicker: 1.0.3
+  painter: 2.0.0
 
 dev_dependencies:
   flutter_test:
