@@ -1,240 +1,285 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:finger_painter/finger_painter.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:painter/painter.dart';
+import 'package:flutter/services.dart';
 
-void main() => runApp(const MyApp());
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      title: 'Painter Example',
-      home: ExamplePage(),
-    );
-  }
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
 }
 
-class ExamplePage extends StatefulWidget {
-  const ExamplePage({super.key});
+class MyApp extends StatefulWidget {
+  const MyApp({Key? key}) : super(key: key);
 
   @override
-  _ExamplePageState createState() => _ExamplePageState();
+  State<MyApp> createState() => _MyAppState();
 }
 
-class _ExamplePageState extends State<ExamplePage> {
-  bool _finished = false;
-  PainterController _controller = _newController();
+class _MyAppState extends State<MyApp> {
+  Image? image;
+  late PainterController painterController;
 
   @override
   void initState() {
     super.initState();
-  }
-
-  static PainterController _newController() {
-    PainterController controller = PainterController();
-    controller.thickness = 5.0;
-    controller.backgroundColor = Colors.green;
-    return controller;
+    painterController = PainterController()
+      ..setStrokeColor(Colors.black)
+      ..setMinStrokeWidth(3)
+      ..setMaxStrokeWidth(15)
+      ..setBlurSigma(0.0)
+      ..setPenType(PenType.paintbrush2)
+      ..setBlendMode(ui.BlendMode.srcOver);
   }
 
   @override
   Widget build(BuildContext context) {
-    List<Widget> actions;
-    if (_finished) {
-      actions = <Widget>[
-        IconButton(
-          icon: const Icon(Icons.content_copy),
-          tooltip: 'New Painting',
-          onPressed: () => setState(() {
-            _finished = false;
-            _controller = _newController();
-          }),
-        ),
-      ];
-    } else {
-      actions = <Widget>[
-        IconButton(
-            icon: const Icon(
-              Icons.undo,
-            ),
-            tooltip: 'Undo',
-            onPressed: () {
-              if (_controller.isEmpty) {
-                showModalBottomSheet(
-                    context: context,
-                    builder: (BuildContext context) =>
-                    const Text('Nothing to undo'));
-              } else {
-                _controller.undo();
-              }
-            }),
-        IconButton(
-            icon: const Icon(Icons.delete),
-            tooltip: 'Clear',
-            onPressed: _controller.clear),
-        IconButton(
-            icon: const Icon(Icons.check),
-            onPressed: () => _show(_controller.finish(), context)),
-      ];
-    }
-    return Scaffold(
-      appBar: AppBar(
-          title: const Text('Painter Example'),
-          actions: actions,
-          bottom: PreferredSize(
-            preferredSize: Size(MediaQuery.of(context).size.width, 30.0),
-            child: DrawBar(_controller),
-          )),
-      body: Center(
-          child: AspectRatio(
-              aspectRatio: 1.0, child: Painter(_controller))),
-    );
-  }
-
-  void _show(PictureDetails picture, BuildContext context) {
-    setState(() {
-      _finished = true;
-    });
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (BuildContext context) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('View your image'),
-        ),
-        body: Container(
-            alignment: Alignment.center,
-            child: FutureBuilder<Uint8List>(
-              future: picture.toPNG(),
-              builder:
-                  (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
-                switch (snapshot.connectionState) {
-                  case ConnectionState.done:
-                    if (snapshot.hasError) {
-                      return Text('Error: ${snapshot.error}');
-                    } else {
-                      return Image.memory(snapshot.data!);
-                    }
-                  default:
-                    return Container(
-                        child: const FractionallySizedBox(
-                          widthFactor: 0.1,
-                          alignment: Alignment.center,
-                          child: AspectRatio(
-                              aspectRatio: 1.0,
-                              child: CircularProgressIndicator()),
-                        ));
-                }
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Column(
+          children: [
+            const SizedBox(height: 30),
+            Painter(
+              controller: painterController,
+              backgroundColor: const Color(0xFFF0F0F0),
+              onDrawingEnded: (bytes) async {
+                print('${painterController.getPoints()?.length} drawn points');
+                setState(() {});
               },
-            )),
-      );
-    }));
+              size: const Size(double.infinity, 250),
+              // child: Image.asset('assets/map.png', fit: BoxFit.cover),
+            ),
+            const SizedBox(height: 30),
+            Expanded(
+              child: SingleChildScrollView(
+                  child: Controls(
+                    pc: painterController,
+                    imgBytesList: painterController.getImageBytes(),
+                  )),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class DrawBar extends StatelessWidget {
-  final PainterController _controller;
+class Controls extends StatefulWidget {
+  final PainterController? pc;
+  final Uint8List? imgBytesList;
 
-  const DrawBar(this._controller, {super.key});
+  const Controls({
+    Key? key,
+    this.pc,
+    this.imgBytesList,
+  }) : super(key: key);
 
   @override
+  State<Controls> createState() => _ControlsState();
+}
+
+class _ControlsState extends State<Controls> {
+  @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Flexible(child: StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) {
-              return Container(
-                  child: Slider(
-                    value: _controller.thickness,
-                    onChanged: (double value) => setState(() {
-                      _controller.thickness = value;
-                    }),
-                    min: 1.0,
-                    max: 20.0,
-                    activeColor: Colors.white,
-                  ));
-            })),
-        StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) {
-              return RotatedBox(
-                  quarterTurns: _controller.eraseMode ? 2 : 0,
-                  child: IconButton(
-                      icon: const Icon(Icons.create),
-                      tooltip: '${_controller.eraseMode ? 'Disable' : 'Enable'} eraser',
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // display current drawing
+            if (widget.imgBytesList != null)
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0x00FFFFFF),
+                  border: Border.all(
+                    color: const Color(0xFF000000),
+                    style: BorderStyle.solid,
+                    width: 4.0,
+                  ),
+                  borderRadius: BorderRadius.zero,
+                  shape: BoxShape.rectangle,
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x66000000),
+                      blurRadius: 10.0,
+                      spreadRadius: 4.0,
+                    )
+                  ],
+                ),
+                child: Image.memory(
+                  widget.imgBytesList!,
+                  gaplessPlayback: true,
+                  fit: BoxFit.scaleDown,
+                  height: 140,
+                ),
+              ),
+
+            const SizedBox(width: 30),
+
+            // Pen types
+            Column(
+              children: [
+                for (int i = 0; i < PenType.values.length; i++)
+                  OutlinedButton(
+                      child: Text(PenType.values[i].name),
+                      style: ButtonStyle(
+                          backgroundColor: widget.pc
+                              ?.getState()
+                              ?.penType
+                              .index ==
+                              i
+                              ? MaterialStateProperty.all(
+                              Colors.greenAccent.withOpacity(0.5))
+                              : MaterialStateProperty.all(Colors.transparent)),
                       onPressed: () {
-                        setState(() {
-                          _controller.eraseMode = !_controller.eraseMode;
-                        });
-                      }));
-            }),
-        ColorPickerButton(_controller, false),
-        ColorPickerButton(_controller, true),
+                        if (widget.pc != null) {
+                          widget.pc!.setPenType(PenType.values[i]);
+                          setState(() {});
+                        }
+                      }),
+              ],
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 30),
+
+        // Colors, background & delete
+        Row(
+          mainAxisSize: MainAxisSize.max,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            FloatingActionButton(
+                backgroundColor: Colors.red,
+                onPressed: () => widget.pc?.setStrokeColor(Colors.red)),
+            FloatingActionButton(
+                backgroundColor: Colors.yellowAccent,
+                onPressed: () =>
+                    widget.pc?.setStrokeColor(Colors.yellowAccent)),
+            FloatingActionButton(
+                backgroundColor: Colors.black,
+                onPressed: () => widget.pc?.setStrokeColor(Colors.black)),
+            FloatingActionButton(
+                backgroundColor: Colors.green,
+                onPressed: () => widget.pc?.setStrokeColor(Colors.green)),
+            FloatingActionButton(
+                backgroundColor: Colors.blue,
+                child: const Icon(Icons.image),
+                onPressed: () async {
+                  Uint8List image = (await rootBundle.load('assets/dash.png'))
+                      .buffer
+                      .asUint8List();
+                  widget.pc?.setBackgroundImage(image);
+                  setState(() {});
+                }),
+            FloatingActionButton(
+                backgroundColor: Colors.red,
+                child: const Icon(Icons.delete_outline),
+                onPressed: () => widget.pc
+                    ?.clearContent(clearColor: const Color(0xfff0f0ff))),
+          ],
+        ),
+
+        const SizedBox(height: 30),
+
+        /// min stroke width
+        Row(
+          children: [
+            Text('  min stroke '
+                '${widget.pc?.getState()!.strokeMinWidth.toStringAsFixed(1)}'),
+            Expanded(
+              child: Slider.adaptive(
+                  value: widget.pc?.getState()?.strokeMinWidth ?? 0,
+                  min: 1,
+                  max: 20,
+                  onChanged: (value) {
+                    if (widget.pc != null) {
+                      widget.pc?.setMinStrokeWidth(value);
+                      if (widget.pc!.getState()!.strokeMinWidth >
+                          widget.pc!.getState()!.strokeMaxWidth) {
+                        widget.pc?.setMinStrokeWidth(
+                            widget.pc!.getState()!.strokeMaxWidth);
+                      }
+                      setState(() {});
+                    }
+                  }),
+            ),
+          ],
+        ),
+
+        /// max stroke width
+        Row(
+          children: [
+            Text('  max stroke '
+                '${widget.pc?.getState()!.strokeMaxWidth.toStringAsFixed(1)}'),
+            Expanded(
+              child: Slider.adaptive(
+                  value: widget.pc?.getState()?.strokeMaxWidth ?? 0,
+                  min: 1,
+                  max: 40,
+                  onChanged: (value) {
+                    if (widget.pc != null) {
+                      widget.pc!.setMaxStrokeWidth(value);
+                      if (widget.pc!.getState()!.strokeMaxWidth <
+                          widget.pc!.getState()!.strokeMinWidth) {
+                        widget.pc!.setMaxStrokeWidth(
+                            widget.pc!.getState()!.strokeMinWidth);
+                      }
+                      setState(() {});
+                    }
+                  }),
+            ),
+          ],
+        ),
+
+        /// blur
+        Row(
+          children: [
+            Text('  blur '
+                '${widget.pc?.getState()!.blurSigma.toStringAsFixed(1)}'),
+            Expanded(
+              child: Slider.adaptive(
+                  value: widget.pc?.getState()?.blurSigma ?? 0,
+                  min: 0.0,
+                  max: 10.0,
+                  onChanged: (value) {
+                    if (widget.pc != null) {
+                      widget.pc!.setBlurSigma(value);
+                      setState(() {});
+                    }
+                  }),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 30),
+
+        // blends modes
+        Wrap(
+          spacing: 4,
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text(' blend modes: '),
+            for (int i = 0; i < ui.BlendMode.values.length; i++)
+              OutlinedButton(
+                  child: Text(ui.BlendMode.values[i].name),
+                  style: ButtonStyle(
+                      backgroundColor:
+                      widget.pc?.getState()?.blendMode.index == i
+                          ? MaterialStateProperty.all(
+                          Colors.greenAccent.withOpacity(0.5))
+                          : MaterialStateProperty.all(Colors.transparent)),
+                  onPressed: () {
+                    widget.pc?.setBlendMode(ui.BlendMode.values[i]);
+                    setState(() {});
+                  }),
+          ],
+        ),
+        const SizedBox(height: 30),
       ],
     );
-  }
-}
-
-class ColorPickerButton extends StatefulWidget {
-  final PainterController _controller;
-  final bool _background;
-
-  const ColorPickerButton(this._controller, this._background, {super.key});
-
-  @override
-  _ColorPickerButtonState createState() => _ColorPickerButtonState();
-}
-
-class _ColorPickerButtonState extends State<ColorPickerButton> {
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-        icon: Icon(_iconData, color: _color),
-        tooltip: widget._background
-            ? 'Change background color'
-            : 'Change draw color',
-        onPressed: _pickColor);
-  }
-
-  void _pickColor() {
-    Color pickerColor = _color;
-    Navigator.of(context)
-        .push(MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (BuildContext context) {
-          return Scaffold(
-              appBar: AppBar(
-                title: const Text('Pick color'),
-              ),
-              body: Container(
-                  alignment: Alignment.center,
-                  child: ColorPicker(
-                    pickerColor: pickerColor,
-                    onColorChanged: (Color c) => pickerColor = c,
-                  )));
-        }))
-        .then((_) {
-      setState(() {
-        _color = pickerColor;
-      });
-    });
-  }
-
-  Color get _color => widget._background
-      ? widget._controller.backgroundColor
-      : widget._controller.drawColor;
-
-  IconData get _iconData =>
-      widget._background ? Icons.format_color_fill : Icons.brush;
-
-  set _color(Color color) {
-    if (widget._background) {
-      widget._controller.backgroundColor = color;
-    } else {
-      widget._controller.drawColor = color;
-    }
   }
 }
